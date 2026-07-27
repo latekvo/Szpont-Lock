@@ -11,7 +11,7 @@ final class LockUIState: ObservableObject {
     @Published var typedCount = 0
     @Published var message = "Touch ID, or type your unlock sequence"
     @Published var isAuthenticating = false
-    @Published var photoTaken = false
+    @Published var captureNote: String?
     @Published var lockedAt = Date()
     var onTouchID: () -> Void = {}
 }
@@ -40,7 +40,7 @@ final class LockOverlay {
         guard windows.isEmpty else { return }
         state.lockedAt = Date()
         state.typedCount = 0
-        state.photoTaken = false
+        state.captureNote = nil
         buildWindows()
 
         observer = NotificationCenter.default.addObserver(
@@ -182,8 +182,8 @@ struct LockScreenView: View {
     private var footer: some View {
         VStack(spacing: 4) {
             Text("Locked at \(state.lockedAt.formatted(date: .omitted, time: .standard))")
-            if state.photoTaken {
-                Label("Photo captured", systemImage: "camera.fill")
+            if let note = state.captureNote {
+                Label(note, systemImage: "video.fill")
             }
         }
         .font(.system(size: 11))

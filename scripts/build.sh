@@ -43,7 +43,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>LSUIElement</key>
     <true/>
     <key>NSCameraUsageDescription</key>
-    <string>SzpontLock photographs whoever is at the keyboard when the watchdog trips.</string>
+    <string>SzpontLock records whoever is at the keyboard when the watchdog trips.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>SzpontLock saves intrusion recordings to your Desktop.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

@@ -10,6 +10,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let armItem = NSMenuItem(title: "Arm Watchdog", action: nil, keyEquivalent: "")
     private let lockNowItem = NSMenuItem(title: "Lock Now", action: nil, keyEquivalent: "")
     private let secretItem = NSMenuItem(title: "Set Unlock Sequence…", action: nil, keyEquivalent: "")
+    private let autoLockItem = NSMenuItem(title: "Auto-Lock When Idle", action: nil, keyEquivalent: "")
+    private let autoLockMenu = NSMenu()
 
     init(controller: LockController) {
         self.controller = controller
@@ -36,11 +38,22 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        for minutes in Preferences.autoLockOptions {
+            let item = NSMenuItem(title: Preferences.autoLockLabel(minutes),
+                                  action: #selector(selectAutoLock(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            item.tag = minutes
+            autoLockMenu.addItem(item)
+        }
+        autoLockItem.submenu = autoLockMenu
+        menu.addItem(autoLockItem)
+
         secretItem.target = self
         secretItem.action = #selector(setSecret)
         menu.addItem(secretItem)
 
-        let capturesItem = NSMenuItem(title: "Open Captures Folder", action: #selector(openCaptures), keyEquivalent: "")
+        let capturesItem = NSMenuItem(title: "Open Recordings Folder", action: #selector(openCaptures), keyEquivalent: "")
         capturesItem.target = self
         menu.addItem(capturesItem)
 
@@ -57,6 +70,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     private func apply(_ state: LockState) {
         statusItem.button?.image = Self.icon(for: state)
+
+        let selected = Preferences.autoLockMinutes
+        for item in autoLockMenu.items {
+            item.state = (item.tag == selected) ? .on : .off
+        }
+        autoLockItem.title = "Auto-Lock When Idle: \(Preferences.autoLockLabel(selected))"
 
         switch state {
         case .idle:
@@ -125,9 +144,15 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         controller.setSecret()
     }
 
+    @objc private func selectAutoLock(_ sender: NSMenuItem) {
+        Preferences.autoLockMinutes = sender.tag
+        controller.restartAutoLockTimer()
+        SecretStore.log("AUTO-LOCK set to \(Preferences.autoLockLabel(sender.tag))")
+        apply(controller.state)
+    }
+
     @objc private func openCaptures() {
-        SecretStore.prepareDirectories()
-        NSWorkspace.shared.open(SecretStore.capturesDirectory)
+        NSWorkspace.shared.open(SecretStore.captureDirectory())
     }
 
     @objc private func openLog() {

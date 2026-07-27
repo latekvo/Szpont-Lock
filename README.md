@@ -4,8 +4,10 @@ A watchdog screen lock for macOS that lives in the menu bar.
 
 Arm it and the machine looks completely normal - the screen stays on and the mouse keeps
 working. The moment anyone touches the keyboard, SzpontLock swallows that keystroke,
-photographs whoever is at the machine, blacks out every display and refuses all input
-until it is unlocked with Touch ID or the unlock sequence.
+records five seconds of whoever is at the machine, blacks out every display and refuses
+all input until it is unlocked with Touch ID or the unlock sequence.
+
+It also locks itself after a configurable stretch of inactivity, so walking away is enough.
 
 ## States
 
@@ -68,6 +70,32 @@ built and launched locally, never distributed. Note `openssl` must be the system
 Homebrew's OpenSSL 3.x writes PKCS12 bundles that `security import` rejects with "MAC
 verification failed".
 
+## Auto-lock
+
+**Auto-Lock When Idle** in the menu offers Off / 1 / 5 / 10 / 15 / 30 minutes, defaulting
+to 5. Inactivity is measured system-wide with
+`CGEventSource.secondsSinceLastEventType(.hidSystemState, …)`, so it counts real hardware
+input rather than anything SzpontLock sees - and it keeps counting while the app sits idle,
+not just while armed. Reaching the threshold goes straight to lockdown, arming on the way
+if needed.
+
+It stays quiet rather than nagging: if there is no unlock sequence set, or Accessibility
+has not been granted, the timer declines to fire rather than throwing a dialog at an
+unattended machine.
+
+## Recording
+
+Tripping records a **5 second clip** to the **Desktop** as `szpontlock_<timestamp>.mov`,
+where it is impossible to miss. If Desktop access is denied, recordings fall back to
+`~/Library/Application Support/SzpontLock/Captures/`.
+
+Video only - audio would mean a Microphone permission prompt that was never asked for. To
+add it, add an audio `AVCaptureDeviceInput` in `CameraRecorder.record` plus an
+`NSMicrophoneUsageDescription` key in `scripts/build.sh`.
+
+The clip always runs its full length, even if you unlock after two seconds; stopping early
+buys nothing and risks a truncated file.
+
 ## Unlocking
 
 - **Touch ID** - offered automatically on lockdown, and via the button for retries.
@@ -80,10 +108,13 @@ Only a salted, stretched SHA-256 of the sequence is written to disk (100k rounds
 ## Where things land
 
 ```
+~/Desktop/
+  szpontlock_<timestamp>.mov    5 second intrusion recording
+
 ~/Library/Application Support/SzpontLock/
   config.json          salt + hash of the unlock sequence (mode 0600)
-  events.log           armed / tripped / captured / unlocked, timestamped
-  Captures/            intruder_<timestamp>.jpg
+  events.log           armed / tripped / recorded / unlocked, timestamped
+  Captures/            fallback for recordings if Desktop access is denied
 ```
 
 ## Escape hatch

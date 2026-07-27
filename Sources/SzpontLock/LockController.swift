@@ -40,10 +40,15 @@ final class LockController {
     private var tap: EventTap!
     private let overlay = LockOverlay()
     private let assertion = DisplayAssertion()
-    private let snapper = CameraSnapper()
+    private let recorder = CameraRecorder()
     private let biometrics = BiometricSession()
     private let matchQueue = DispatchQueue(label: "com.szpont.lock.match")
     private var biometricTimer: Timer?
+    private var autoLockTimer: Timer?
+
+    /// `kCGAnyInputEventType` (0xFFFFFFFF) happens to collide with
+    /// `.tapDisabledByUserInput`, which is why this initialiser is non-nil.
+    private static let anyInputEvent = CGEventType(rawValue: ~0)
 
     private var armedAt = Date.distantPast
     private var buffer = ""
@@ -60,6 +65,33 @@ final class LockController {
             return self.handle(type: type, event: event)
         }
         overlay.state.onTouchID = { [weak self] in self?.requestTouchID() }
+        restartAutoLockTimer()
+    }
+
+    // MARK: - Auto-lock on inactivity
+
+    /// Called at launch and whenever the interval changes.
+    func restartAutoLockTimer() {
+        autoLockTimer?.invalidate()
+        autoLockTimer = nil
+        guard Preferences.autoLockMinutes > 0 else { return }
+        autoLockTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.checkInactivity()
+        }
+    }
+
+    private func checkInactivity() {
+        let minutes = Preferences.autoLockMinutes
+        guard minutes > 0, state != .locked else { return }
+        // Bail out silently on anything that would put a dialog on screen unprompted.
+        guard SecretStore.hasSecret, AXIsProcessTrusted() else { return }
+
+        guard let anyInput = Self.anyInputEvent else { return }
+        let idle = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: anyInput)
+        guard idle >= Double(minutes) * 60 else { return }
+
+        SecretStore.log("AUTO-LOCK after \(Int(idle))s idle (threshold \(minutes)m)")
+        lockNow()
     }
 
     // MARK: - Commands
@@ -75,7 +107,7 @@ final class LockController {
             setSecret()
             return
         }
-        primeCameraPermission()
+        primePermissions()
 
         guard tap.start() else {
             presentAlert(
@@ -209,13 +241,16 @@ final class LockController {
             }
         }
 
-        snapper.snap { [weak self] url in
+        let seconds = Int(Preferences.recordingSeconds)
+        overlay.state.captureNote = "Recording \(seconds)s…"
+        recorder.record(duration: Preferences.recordingSeconds, into: SecretStore.captureDirectory()) { [weak self] url in
             guard let self else { return }
             if let url {
-                self.overlay.state.photoTaken = true
-                SecretStore.log("CAPTURED \(url.lastPathComponent)")
+                self.overlay.state.captureNote = "Recording saved to \(url.deletingLastPathComponent().lastPathComponent)"
+                SecretStore.log("RECORDED \(url.path)")
             } else {
-                SecretStore.log("CAPTURE FAILED")
+                self.overlay.state.captureNote = "Recording failed"
+                SecretStore.log("RECORDING FAILED")
             }
         }
 
@@ -306,11 +341,15 @@ final class LockController {
         return trusted
     }
 
-    /// Ask for the camera up front, so the TCC prompt never appears mid-lockdown
-    /// where the shield would hide it and the tap would swallow the clicks.
-    private func primeCameraPermission() {
-        guard CameraSnapper.authorizationStatus() == .notDetermined else { return }
-        CameraSnapper.requestAccess { _ in }
+    /// Ask for camera and Desktop access up front, so neither TCC prompt appears
+    /// mid-lockdown where the shield would hide it and the tap would swallow the clicks.
+    private func primePermissions() {
+        if CameraRecorder.authorizationStatus() == .notDetermined {
+            CameraRecorder.requestAccess { _ in }
+        }
+        if let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first {
+            SecretStore.isWritable(desktop)
+        }
     }
 
     private func presentAlert(title: String, message: String) {

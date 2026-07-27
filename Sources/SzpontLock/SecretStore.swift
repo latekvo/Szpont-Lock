@@ -14,14 +14,40 @@ enum SecretStore {
         return base.appendingPathComponent("SzpontLock", isDirectory: true)
     }()
 
-    static let capturesDirectory = supportDirectory.appendingPathComponent("Captures", isDirectory: true)
+    private static let fallbackCapturesDirectory = supportDirectory.appendingPathComponent("Captures", isDirectory: true)
     private static let configURL = supportDirectory.appendingPathComponent("config.json")
     private static let logURL = supportDirectory.appendingPathComponent("events.log")
 
     private static var cached: Config?
 
     static func prepareDirectories() {
-        try? FileManager.default.createDirectory(at: capturesDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+    }
+
+    /// Recordings go to the Desktop so an intrusion is impossible to miss. Access to the
+    /// Desktop is TCC-gated, so this falls back to Application Support when it is denied -
+    /// evidence in a less obvious place beats no evidence at all.
+    static func captureDirectory() -> URL {
+        if let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first,
+           isWritable(desktop) {
+            return desktop
+        }
+        try? FileManager.default.createDirectory(at: fallbackCapturesDirectory, withIntermediateDirectories: true)
+        return fallbackCapturesDirectory
+    }
+
+    /// Doubles as the trigger for the Desktop TCC prompt when called from `arm()`, so the
+    /// prompt never appears mid-lockdown where the shield would hide it.
+    @discardableResult
+    static func isWritable(_ directory: URL) -> Bool {
+        let probe = directory.appendingPathComponent(".szpontlock-write-probe")
+        do {
+            try Data().write(to: probe)
+            try? FileManager.default.removeItem(at: probe)
+            return true
+        } catch {
+            return false
+        }
     }
 
     private static func load() -> Config? {
