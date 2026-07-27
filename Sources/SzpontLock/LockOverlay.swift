@@ -33,11 +33,19 @@ final class LockOverlay {
     private var windows: [OverlayWindow] = []
     private var observer: NSObjectProtocol?
     private var biometricPromptVisible = false
+    /// Whether the top display strobes the lockdown picture, or is plain blackout like the
+    /// rest. Stored rather than passed straight through, so plugging a display in mid-
+    /// lockdown rebuilds the same windows instead of starting an alarm nobody asked for.
+    private var strobes = false
 
     var isVisible: Bool { !windows.isEmpty }
 
-    func show() {
+    /// `strobing` raises the alarm: the lockdown picture flashing on the topmost display.
+    /// It is for an intruder, so an owner-requested lockdown passes false and gets a quiet
+    /// shield instead.
+    func show(strobing: Bool) {
         guard windows.isEmpty else { return }
+        strobes = strobing
         state.lockedAt = Date()
         state.typedCount = 0
         state.captureNote = nil
@@ -107,14 +115,14 @@ final class LockOverlay {
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
             window.setFrame(screen.frame, display: true)
 
-            // The interactive panel stays on the primary display and the picture goes on the
-            // topmost one; any others are plain blackout. With a single display the two land
-            // on the same screen and stack.
+            // The interactive panel stays on the primary display and the picture, when the
+            // lockdown warrants one, goes on the topmost; any others are plain blackout.
+            // With a single display the two land on the same screen and stack.
             let isPrimary = screen == primary
             let root = LockScreenView(
                 state: state,
                 showsPanel: isPrimary,
-                showsImage: screen == topmost
+                showsImage: strobes && screen == topmost
             )
             window.contentView = NSHostingView(rootView: root)
             window.orderFrontRegardless()

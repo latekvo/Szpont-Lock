@@ -10,6 +10,26 @@ enum LockState {
     case locked
 }
 
+/// Why lockdown was entered. The alarm - the strobing picture and the camera clip - is
+/// aimed at whoever tripped the watchdog, so it belongs to an intrusion and nothing else.
+/// Locking on purpose is the owner shielding their own screen: there is nobody to startle
+/// and the only face the camera would catch is theirs.
+enum LockCause {
+    /// The armed watchdog was answered with the wrong sequence.
+    case intrusion
+    /// The owner asked for lockdown themselves, via *Lock Now*.
+    case ownerRequest
+
+    var raisesAlarm: Bool { self == .intrusion }
+
+    /// What lands in the event log next to `TRIPPED`.
+    var logReason: String {
+        switch self {
+        case .intrusion: return "wrong sequence"
+        case .ownerRequest: return "manual"
+        }
+    }
+}
 
 /// The watchdog state machine: idle -> armed -> locked -> idle.
 final class LockController {
@@ -184,17 +204,19 @@ final class LockController {
         }
     }
 
-    /// Manual panic lock - skips the watchdog phase and goes straight to lockdown.
+    /// Manual panic lock - skips the watchdog phase and goes straight to lockdown. The
+    /// owner asked for this one, so the shield goes up without the alarm: no strobe, no
+    /// recording.
     func lockNow() {
         switch state {
         case .locked:
             return
         case .armed:
-            trip(reason: "manual")
+            trip(.ownerRequest)
         case .idle:
             arm()
             guard state == .armed else { return }
-            trip(reason: "manual")
+            trip(.ownerRequest)
         }
     }
 
@@ -302,7 +324,7 @@ final class LockController {
                 if isCorrect {
                     self.disarm(reason: "correct sequence - watchdog never surfaced")
                 } else {
-                    self.trip(reason: "wrong sequence")
+                    self.trip(.intrusion)
                 }
             }
         }
@@ -336,13 +358,13 @@ final class LockController {
 
     // MARK: - Transitions
 
-    private func trip(reason: String) {
+    private func trip(_ cause: LockCause) {
         guard state == .armed else { return }
         state = .locked
         buffer = ""
         assertion.acquire(reason: "SzpontLock locked")
-        overlay.show()
-        SecretStore.log("TRIPPED (\(reason))")
+        overlay.show(strobing: cause.raisesAlarm)
+        SecretStore.log("TRIPPED (\(cause.logReason))")
 
         overlay.state.message = idleLockMessage
         if panicTimeout > 0 {
@@ -351,6 +373,15 @@ final class LockController {
             }
         }
 
+        if cause.raisesAlarm { recordIntruder() }
+
+        // Offer the fingerprint immediately; the button is there for retries.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.requestTouchID()
+        }
+    }
+
+    private func recordIntruder() {
         let seconds = Int(Preferences.recordingSeconds)
         overlay.state.captureNote = "Recording \(seconds)s…"
         recorder.record(duration: Preferences.recordingSeconds, into: SecretStore.captureDirectory()) { [weak self] outcome in
@@ -365,11 +396,6 @@ final class LockController {
             case .discarded:
                 SecretStore.log("RECORDING DISCARDED (unlocked before the clip finished)")
             }
-        }
-
-        // Offer the fingerprint immediately; the button is there for retries.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.requestTouchID()
         }
     }
 

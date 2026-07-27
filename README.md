@@ -20,7 +20,13 @@ to say so, so walking away is enough to set the trap.
 | --- | --- | --- |
 | open padlock | idle | nothing is running |
 | orange eye | armed | mouse passes through; keyboard is a silent challenge |
-| red padlock | locked | all input swallowed, shield on every display, clip recorded |
+| red padlock | locked | all input swallowed, shield on every display; an intrusion also strobes and records |
+
+Lockdown comes from two places, and they are not treated the same. A **wrong sequence** at
+the armed watchdog is an intrusion, and gets the full alarm: the picture strobing on the top
+display and a clip of whoever is sitting there. **Lock Now** in the menu is the owner
+shielding their own screen - same shield, same input suppression, but no strobe and no
+recording. There is nobody to startle, and the only face the camera would catch is yours.
 
 ## The armed challenge
 
@@ -110,9 +116,12 @@ unattended machine.
 
 ## Recording
 
-Tripping records a **5 second clip** to the **Desktop** as `szpontlock_<timestamp>.mov`,
-where it is impossible to miss. If Desktop access is denied, recordings fall back to
-`~/Library/Application Support/SzpontLock/Captures/`.
+A **wrong sequence** records a **5 second clip** to the **Desktop** as
+`szpontlock_<timestamp>.mov`, where it is impossible to miss. If Desktop access is denied,
+recordings fall back to `~/Library/Application Support/SzpontLock/Captures/`.
+
+**Lock Now does not record.** The camera is there to catch whoever tripped the watchdog, and
+a lockdown you asked for was not tripped by anybody.
 
 Video only - audio would mean a Microphone permission prompt that was never asked for. To
 add it, add an audio `AVCaptureDeviceInput` in `CameraRecorder.record` plus an
@@ -128,11 +137,14 @@ kept, even if the unlock follows a moment later, because the full window was cap
 The interactive panel - typed-character dots, Touch ID button, timestamps - goes on the
 **primary** display. Every other display is plain blackout.
 
-The **topmost** display gets `Resources/lockdown.png`, meaning the one physically highest
-in the arrangement rather than `screens[0]`: Cocoa's y axis points up, so it is the screen
-with the greatest `frame.maxY`. It strobes **black → picture → white** at 60 ms a phase for
-two seconds, then holds black for the rest of the lockdown. With a single display the
-strobe and the panel share it, the panel drawn over the top.
+On an **intrusion**, the **topmost** display gets `Resources/lockdown.png` - the one
+physically highest in the arrangement rather than `screens[0]`: Cocoa's y axis points up, so
+it is the screen with the greatest `frame.maxY`. It strobes **black → picture → white** at
+60 ms a phase for two seconds, then holds black for the rest of the lockdown. With a single
+display the strobe and the panel share it, the panel drawn over the top.
+
+After **Lock Now** there is no picture and no strobe on any display. That is decided once,
+when the shield goes up, so plugging a display in mid-lockdown does not start one either.
 
 > The strobe flashes black to white at roughly 5.5 Hz, inside the range that can provoke
 > photosensitive seizures. It is deliberate, but worth knowing before pointing it at
