@@ -1,0 +1,4 @@
+.build/
+dist/
+.signing/
+.DS_Store
