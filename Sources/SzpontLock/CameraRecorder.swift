@@ -47,13 +47,15 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     /// Records `duration` seconds into `directory`. `completion` runs on the main queue.
     func record(duration: TimeInterval, into directory: URL, completion: @escaping (RecordingOutcome) -> Void) {
-        self.completion = completion
-        targetDuration = duration
-        isStopping = false
-        finished = false
-
         queue.async { [weak self] in
             guard let self else { return }
+            // All mutable state is confined to `queue`, including these - setting them on
+            // the calling thread would race with an in-flight cancel() or finish().
+            self.completion = completion
+            self.targetDuration = duration
+            self.isStopping = false
+            self.finished = false
+
             guard let device = AVCaptureDevice.default(for: .video),
                   let input = try? AVCaptureDeviceInput(device: device) else {
                 self.finish(.failed)
