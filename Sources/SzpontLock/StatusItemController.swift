@@ -10,8 +10,8 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let armItem = NSMenuItem(title: "Arm Watchdog", action: nil, keyEquivalent: "")
     private let lockNowItem = NSMenuItem(title: "Lock Now", action: nil, keyEquivalent: "")
     private let secretItem = NSMenuItem(title: "Set Unlock Sequence…", action: nil, keyEquivalent: "")
-    private let autoLockItem = NSMenuItem(title: "Auto-Lock When Idle", action: nil, keyEquivalent: "")
-    private let autoLockMenu = NSMenu()
+    private let autoArmItem = NSMenuItem(title: "Auto-Arm When Idle", action: nil, keyEquivalent: "")
+    private let autoArmMenu = NSMenu()
 
     init(controller: LockController) {
         self.controller = controller
@@ -38,16 +38,16 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
-        for minutes in Preferences.autoLockOptions {
-            let item = NSMenuItem(title: Preferences.autoLockLabel(minutes),
-                                  action: #selector(selectAutoLock(_:)),
+        for minutes in Preferences.autoArmOptions {
+            let item = NSMenuItem(title: Preferences.autoArmLabel(minutes),
+                                  action: #selector(selectAutoArm(_:)),
                                   keyEquivalent: "")
             item.target = self
             item.tag = minutes
-            autoLockMenu.addItem(item)
+            autoArmMenu.addItem(item)
         }
-        autoLockItem.submenu = autoLockMenu
-        menu.addItem(autoLockItem)
+        autoArmItem.submenu = autoArmMenu
+        menu.addItem(autoArmItem)
 
         secretItem.target = self
         secretItem.action = #selector(setSecret)
@@ -71,11 +71,11 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private func apply(_ state: LockState) {
         statusItem.button?.image = Self.icon(for: state)
 
-        let selected = Preferences.autoLockMinutes
-        for item in autoLockMenu.items {
+        let selected = Preferences.autoArmMinutes
+        for item in autoArmMenu.items {
             item.state = (item.tag == selected) ? .on : .off
         }
-        autoLockItem.title = "Auto-Lock When Idle: \(Preferences.autoLockLabel(selected))"
+        autoArmItem.title = "Auto-Arm When Idle: \(Preferences.autoArmLabel(selected))"
 
         switch state {
         case .idle:
@@ -144,10 +144,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         controller.setSecret()
     }
 
-    @objc private func selectAutoLock(_ sender: NSMenuItem) {
-        Preferences.autoLockMinutes = sender.tag
-        controller.restartAutoLockTimer()
-        SecretStore.log("AUTO-LOCK set to \(Preferences.autoLockLabel(sender.tag))")
+    @objc private func selectAutoArm(_ sender: NSMenuItem) {
+        Preferences.autoArmMinutes = sender.tag
+        controller.restartAutoArmTimer()
+        SecretStore.log("AUTO-ARM set to \(Preferences.autoArmLabel(sender.tag))")
         apply(controller.state)
     }
 

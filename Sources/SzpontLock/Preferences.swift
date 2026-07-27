@@ -1,22 +1,22 @@
 import Foundation
 
 enum Preferences {
-    private static let autoLockKey = "autoLockMinutes"
+    private static let autoArmKey = "autoArmMinutes"
 
-    /// Minutes of system-wide input inactivity before the machine locks itself.
+    /// Minutes of system-wide input inactivity before the watchdog arms itself.
     /// Zero disables it. Defaults to 5.
-    static var autoLockMinutes: Int {
+    static var autoArmMinutes: Int {
         get {
-            guard UserDefaults.standard.object(forKey: autoLockKey) != nil else { return 5 }
-            return UserDefaults.standard.integer(forKey: autoLockKey)
+            guard UserDefaults.standard.object(forKey: autoArmKey) != nil else { return 5 }
+            return UserDefaults.standard.integer(forKey: autoArmKey)
         }
-        set { UserDefaults.standard.set(newValue, forKey: autoLockKey) }
+        set { UserDefaults.standard.set(newValue, forKey: autoArmKey) }
     }
 
     /// Offered in the menu bar; 0 is "Off".
-    static let autoLockOptions = [0, 1, 5, 10, 15, 30]
+    static let autoArmOptions = [0, 1, 5, 10, 15, 30]
 
-    static func autoLockLabel(_ minutes: Int) -> String {
+    static func autoArmLabel(_ minutes: Int) -> String {
         minutes == 0 ? "Off" : "\(minutes) min"
     }
 

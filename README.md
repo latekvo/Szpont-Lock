@@ -11,7 +11,8 @@ refuses all input until Touch ID or the sequence releases it.
 Either way none of that typing reaches whatever app happened to be focused - the armed
 watchdog swallows every keystroke.
 
-It also locks itself after a configurable stretch of inactivity, so walking away is enough.
+It also arms itself after a configurable stretch of inactivity, flashing the screen white
+to say so, so walking away is enough to set the trap.
 
 ## States
 
@@ -87,14 +88,21 @@ built and launched locally, never distributed. Note `openssl` must be the system
 Homebrew's OpenSSL 3.x writes PKCS12 bundles that `security import` rejects with "MAC
 verification failed".
 
-## Auto-lock
+## Auto-arm
 
-**Auto-Lock When Idle** in the menu offers Off / 1 / 5 / 10 / 15 / 30 minutes, defaulting
-to 5. Inactivity is measured system-wide with
+**Auto-Arm When Idle** in the menu offers Off / 1 / 5 / 10 / 15 / 30 minutes, defaulting
+to 5. Reaching the threshold **arms the watchdog** - it does not lock. Walk away, come back,
+type your sequence, and it stands down without ever showing itself. Locking an idle machine
+outright would only duplicate the system screen lock; arming is the thing this app can do
+that the system cannot.
+
+Arming this way **flashes every display white once** (~0.36s, click-through, the machine
+stays usable underneath). Nobody was watching when it happened, so whoever sits down needs
+to know the keyboard has become a password prompt rather than text input.
+
+Inactivity is measured system-wide with
 `CGEventSource.secondsSinceLastEventType(.hidSystemState, …)`, so it counts real hardware
-input rather than anything SzpontLock sees - and it keeps counting while the app sits idle,
-not just while armed. Reaching the threshold goes straight to lockdown, arming on the way
-if needed.
+input rather than anything SzpontLock sees.
 
 It stays quiet rather than nagging: if there is no unlock sequence set, or Accessibility
 has not been granted, the timer declines to fire rather than throwing a dialog at an

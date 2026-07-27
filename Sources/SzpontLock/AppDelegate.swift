@@ -8,7 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SecretStore.prepareDirectories()
         statusItemController = StatusItemController(controller: controller)
         let panic = ProcessInfo.processInfo.environment["SZPONTLOCK_PANIC_TIMEOUT"] ?? "off"
-        SecretStore.log("LAUNCHED (panic timeout: \(panic), auto-lock: \(Preferences.autoLockLabel(Preferences.autoLockMinutes)))")
+        SecretStore.log("LAUNCHED (panic timeout: \(panic), auto-arm: \(Preferences.autoArmLabel(Preferences.autoArmMinutes)))")
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

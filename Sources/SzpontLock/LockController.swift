@@ -10,6 +10,7 @@ enum LockState {
     case locked
 }
 
+
 /// The watchdog state machine: idle -> armed -> locked -> idle.
 final class LockController {
     /// A half-finished attempt left by someone brushing the keyboard must not corrupt the
@@ -44,7 +45,8 @@ final class LockController {
     private let biometrics = BiometricSession()
     private let matchQueue = DispatchQueue(label: "com.szpont.lock.match")
     private var biometricTimer: Timer?
-    private var autoLockTimer: Timer?
+    private var autoArmTimer: Timer?
+    private let flashOverlay = FlashOverlay()
 
     /// `kCGAnyInputEventType` (0xFFFFFFFF) happens to collide with
     /// `.tapDisabledByUserInput`, which is why this initialiser is non-nil.
@@ -67,24 +69,27 @@ final class LockController {
             return self.handle(type: type, event: event)
         }
         overlay.state.onTouchID = { [weak self] in self?.requestTouchID() }
-        restartAutoLockTimer()
+        restartAutoArmTimer()
     }
 
-    // MARK: - Auto-lock on inactivity
+    // MARK: - Auto-arm on inactivity
 
     /// Called at launch and whenever the interval changes.
-    func restartAutoLockTimer() {
-        autoLockTimer?.invalidate()
-        autoLockTimer = nil
-        guard Preferences.autoLockMinutes > 0 else { return }
-        autoLockTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+    func restartAutoArmTimer() {
+        autoArmTimer?.invalidate()
+        autoArmTimer = nil
+        guard Preferences.autoArmMinutes > 0 else { return }
+        autoArmTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.checkInactivity()
         }
     }
 
+    /// Walking away arms the watchdog rather than locking outright: come back, type the
+    /// sequence, and it stands down without ever showing itself. Locking an idle machine
+    /// instead would just duplicate the system screen lock.
     private func checkInactivity() {
-        let minutes = Preferences.autoLockMinutes
-        guard minutes > 0, state != .locked else { return }
+        let minutes = Preferences.autoArmMinutes
+        guard minutes > 0, state == .idle else { return }
         // Bail out silently on anything that would put a dialog on screen unprompted.
         guard SecretStore.hasSecret, AXIsProcessTrusted() else { return }
 
@@ -92,8 +97,12 @@ final class LockController {
         let idle = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: anyInput)
         guard idle >= Double(minutes) * 60 else { return }
 
-        SecretStore.log("AUTO-LOCK after \(Int(idle))s idle (threshold \(minutes)m)")
-        lockNow()
+        arm()
+        guard state == .armed else { return }
+        SecretStore.log("AUTO-ARMED after \(Int(idle))s idle (threshold \(minutes)m)")
+        // Announce it: nobody was watching when this happened, and whoever sits down needs
+        // to know the keyboard is now a password prompt.
+        flashOverlay.flash()
     }
 
     // MARK: - Commands
