@@ -3,9 +3,13 @@
 A watchdog screen lock for macOS that lives in the menu bar.
 
 Arm it and the machine looks completely normal - the screen stays on and the mouse keeps
-working. The moment anyone touches the keyboard, SzpontLock swallows that keystroke,
-records five seconds of whoever is at the machine, blacks out every display and refuses
-all input until it is unlocked with Touch ID or the unlock sequence.
+working. What changes is that the keyboard quietly becomes a password prompt. Type your
+unlock sequence and the watchdog stands down without ever showing itself. Type anything
+else and the machine locks, records five seconds of whoever is at the keyboard, and
+refuses all input until Touch ID or the sequence releases it.
+
+Either way none of that typing reaches whatever app happened to be focused - the armed
+watchdog swallows every keystroke.
 
 It also locks itself after a configurable stretch of inactivity, so walking away is enough.
 
@@ -14,8 +18,21 @@ It also locks itself after a configurable stretch of inactivity, so walking away
 | Menu bar icon | State | Behaviour |
 | --- | --- | --- |
 | open padlock | idle | nothing is running |
-| orange eye | armed | mouse passes through, the first keystroke springs the trap |
-| red padlock | locked | all input swallowed, shield on every display, photo taken |
+| orange eye | armed | mouse passes through; keyboard is a silent challenge |
+| red padlock | locked | all input swallowed, shield on every display, clip recorded |
+
+## The armed challenge
+
+While armed, keystrokes are swallowed and collected instead of being acted on. Once as many
+characters have been typed as the sequence is long, they are checked:
+
+- **correct** - the watchdog disarms silently. No lock screen, nothing shown at all.
+- **wrong** - straight to lockdown.
+
+Backspace corrects a typo and Escape or Return starts over. A part-typed attempt is
+forgotten after five seconds of no typing, so somebody brushing the keyboard cannot leave
+a stray character that ruins the next real attempt. Only the salted hash is stored, so the
+check happens on a whole attempt rather than character by character.
 
 ## Building
 
@@ -98,11 +115,30 @@ up, whoever unlocked it was the owner, so the recording is of you answering your
 the partial file is deleted rather than left on the Desktop. A clip that already finished is
 kept, even if the unlock follows a moment later, because the full window was captured.
 
+## The lock screen
+
+The interactive panel - typed-character dots, Touch ID button, timestamps - goes on the
+**primary** display. `Resources/lockdown.png` goes on the **topmost** display, meaning the
+one physically highest in the arrangement rather than `screens[0]`: Cocoa's y axis points
+up, so it is the screen with the greatest `frame.maxY`. Every other display is plain
+blackout. With a single display the picture and the panel share it.
+
 ## Unlocking
 
 - **Touch ID** - offered automatically on lockdown, and via the button for retries.
 - **Unlock sequence** - just type it; it is matched as you type, no Return needed. Escape
   or Return clears what you have typed so far. ⌘ and ⌃ combinations are ignored.
+
+## Disarming
+
+Standing the watchdog down hands the machine back, so it needs proof:
+
+- **Touch ID** via *Disarm Watchdog* in the menu, or
+- **type the sequence** - the armed watchdog is already listening for it.
+
+*Quit* is the same hole one menu item down, so it asks for the same fingerprint while armed
+and disarms before terminating. `applicationShouldTerminate` refuses unless the app is idle,
+which also blocks a quit arriving from anywhere else.
 
 Only a salted, stretched SHA-256 of the sequence is written to disk (100k rounds, about
 50 ms per attempt), in `~/Library/Application Support/SzpontLock/config.json`.

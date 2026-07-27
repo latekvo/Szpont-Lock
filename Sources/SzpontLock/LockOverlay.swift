@@ -79,8 +79,20 @@ final class LockOverlay {
         buildWindows()
     }
 
+    /// Bundled once; a missing asset just means no picture, never a crash mid-lockdown.
+    static let intruderImage: NSImage? = {
+        guard let url = Bundle.main.url(forResource: "lockdown", withExtension: "png") else { return nil }
+        return NSImage(contentsOf: url)
+    }()
+
     private func buildWindows() {
-        for (index, screen) in NSScreen.screens.enumerated() {
+        let screens = NSScreen.screens
+        // "Top" is the physically topmost display in the arrangement, not screens[0]:
+        // Cocoa's y axis points up, so the highest maxY is the one sitting above the rest.
+        let topmost = screens.max(by: { $0.frame.maxY < $1.frame.maxY })
+        let primary = screens.first
+
+        for screen in screens {
             let window = OverlayWindow(
                 contentRect: screen.frame,
                 styleMask: [.borderless],
@@ -95,11 +107,18 @@ final class LockOverlay {
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
             window.setFrame(screen.frame, display: true)
 
-            // Only the primary display gets the interactive panel; the rest are just blackout.
-            let root = LockScreenView(state: state, showsPanel: index == 0)
+            // The interactive panel stays on the primary display and the picture goes on the
+            // topmost one; any others are plain blackout. With a single display the two land
+            // on the same screen and stack.
+            let isPrimary = screen == primary
+            let root = LockScreenView(
+                state: state,
+                showsPanel: isPrimary,
+                showsImage: screen == topmost
+            )
             window.contentView = NSHostingView(rootView: root)
             window.orderFrontRegardless()
-            if index == 0 { window.makeKey() }
+            if isPrimary { window.makeKey() }
             windows.append(window)
         }
     }
@@ -108,6 +127,7 @@ final class LockOverlay {
 struct LockScreenView: View {
     @ObservedObject var state: LockUIState
     let showsPanel: Bool
+    let showsImage: Bool
 
     var body: some View {
         ZStack {
@@ -119,9 +139,18 @@ struct LockScreenView: View {
             )
             .ignoresSafeArea()
 
-            if showsPanel {
-                panel
+            VStack(spacing: 32) {
+                if showsImage, let image = LockOverlay.intruderImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                if showsPanel {
+                    panel
+                }
             }
+            .padding(showsImage ? 40 : 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

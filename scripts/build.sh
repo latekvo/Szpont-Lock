@@ -16,6 +16,7 @@ BINARY="$(swift build -c "$CONFIG" --show-bin-path)/SzpontLock"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BINARY" "$APP/Contents/MacOS/SzpontLock"
+cp "$ROOT/Resources/lockdown.png" "$APP/Contents/Resources/lockdown.png"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

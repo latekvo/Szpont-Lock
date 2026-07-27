@@ -12,9 +12,9 @@ enum LockState {
 
 /// The watchdog state machine: idle -> armed -> locked -> idle.
 final class LockController {
-    /// Keystrokes in the first moments after arming are ignored, so that arming
-    /// from the keyboard-navigated menu does not instantly trip the watchdog.
-    private let armGrace: TimeInterval = 1.5
+    /// A half-finished attempt left by someone brushing the keyboard must not corrupt the
+    /// next one, so the armed challenge buffer resets after this long without a keystroke.
+    private let challengeResetInterval: TimeInterval = 5
 
     /// Escape hatch: with `SZPONTLOCK_PANIC_TIMEOUT=<seconds>` in the environment,
     /// lockdown releases itself after that many seconds. Off unless set, and always
@@ -50,14 +50,16 @@ final class LockController {
     /// `.tapDisabledByUserInput`, which is why this initialiser is non-nil.
     private static let anyInputEvent = CGEventType(rawValue: ~0)
 
-    private var armedAt = Date.distantPast
+    /// What has been typed on the lock screen.
     private var buffer = ""
 
-    /// Set synchronously inside the tap callback the instant the trap is sprung.
-    /// `trip()` itself has to be deferred to the next run-loop turn (it shows windows and
-    /// starts the camera, far too slow for the callback), and without this flag every
-    /// keystroke in that gap would still see `.armed` and be passed through.
-    private var isTripping = false
+    /// What has been typed at the armed watchdog, which listens silently: get the sequence
+    /// right and it stands down without ever showing itself, get it wrong and it locks.
+    private var armedBuffer = ""
+    private var lastArmedKeyAt = Date.distantPast
+    /// True while a completed attempt is being hashed; further keys are ignored (though
+    /// still swallowed) until the verdict lands.
+    private var isVerifyingChallenge = false
 
     init() {
         tap = EventTap { [weak self] type, event in
@@ -118,18 +120,59 @@ final class LockController {
         }
 
         assertion.acquire(reason: "SzpontLock watchdog armed")
-        armedAt = Date()
+        armedBuffer = ""
         state = .armed
         SecretStore.log("ARMED")
     }
 
-    func disarm() {
+    func disarm(reason: String = "menu") {
         guard state == .armed else { return }
-        isTripping = false
+        armedBuffer = ""
+        isVerifyingChallenge = false
         tap.stop()
         assertion.release()
         state = .idle
-        SecretStore.log("DISARMED")
+        SecretStore.log("DISARMED (\(reason))")
+    }
+
+    /// Standing the watchdog down hands the machine back, so it takes a fingerprint - a
+    /// menu item that did it on one unauthenticated click made the whole thing decorative.
+    /// The other route is simply to type the sequence, which the watchdog is listening for.
+    func requestDisarm() {
+        authenticateForRelease(reason: "disarm the SzpontLock watchdog") { [weak self] success in
+            guard success else { return }
+            self?.disarm(reason: "Touch ID")
+        }
+    }
+
+    /// Quitting while armed is the same hole as disarming, one menu item down.
+    func requestQuit(completion: @escaping (Bool) -> Void) {
+        guard state == .armed else {
+            completion(state == .idle)
+            return
+        }
+        authenticateForRelease(reason: "quit SzpontLock and stand the watchdog down") { [weak self] success in
+            // Disarm first: applicationShouldTerminate refuses to quit unless idle.
+            if success { self?.disarm(reason: "quit") }
+            completion(success)
+        }
+    }
+
+    private func authenticateForRelease(reason: String, completion: @escaping (Bool) -> Void) {
+        guard BiometricSession.isAvailable else {
+            presentAlert(
+                title: "Touch ID unavailable",
+                message: "Type your unlock sequence instead - the armed watchdog is listening for it."
+            )
+            completion(false)
+            return
+        }
+        biometrics.authenticate(reason: reason) { [weak self] success, failureMessage in
+            if !success, let failureMessage {
+                self?.presentAlert(title: "Not disarmed", message: failureMessage)
+            }
+            completion(success)
+        }
     }
 
     /// Manual panic lock - skips the watchdog phase and goes straight to lockdown.
@@ -166,11 +209,24 @@ final class LockController {
             return event
 
         case .armed:
-            if isTripping { return passesThroughDuringLockdown(type) ? event : nil }
-            guard type == .keyDown, Date().timeIntervalSince(armedAt) >= armGrace else { return event }
-            isTripping = true
-            DispatchQueue.main.async { [weak self] in self?.trip(reason: "keystroke") }
-            return nil // the keystroke that trips the trap never reaches anything
+            // Mouse and everything else carry on as normal; the keyboard becomes a silent
+            // password prompt. Keystrokes are swallowed either way, so nothing an intruder
+            // types ever reaches whatever app happens to be focused.
+            switch type {
+            case .keyDown:
+                let code = event.keyCode
+                let characters = event.typedCharacters
+                let flags = event.flags
+                DispatchQueue.main.async { [weak self] in
+                    self?.consumeChallengeKey(code: code, characters: characters, flags: flags)
+                }
+                return nil
+            case .keyUp:
+                // Its keyDown was swallowed, so releasing must not leak through either.
+                return nil
+            default:
+                return event
+            }
 
         case .locked:
             if type == .keyDown {
@@ -194,6 +250,52 @@ final class LockController {
             return true
         default:
             return false
+        }
+    }
+
+    /// Keys typed at the armed watchdog. A full-length attempt either stands the watchdog
+    /// down silently or locks the machine; nothing is shown either way until it locks.
+    private func consumeChallengeKey(code: Int64, characters: String, flags: CGEventFlags) {
+        guard state == .armed, !isVerifyingChallenge else { return }
+
+        if Date().timeIntervalSince(lastArmedKeyAt) > challengeResetInterval {
+            armedBuffer = ""
+        }
+        lastArmedKeyAt = Date()
+
+        switch code {
+        case KeyCode.escape, KeyCode.returnKey, KeyCode.keypadEnter:
+            armedBuffer = ""
+            return
+        case KeyCode.delete:
+            armedBuffer = String(armedBuffer.dropLast())
+            return
+        default:
+            guard !flags.contains(.maskCommand), !flags.contains(.maskControl) else { return }
+            guard !characters.isEmpty else { return }
+            armedBuffer += characters
+        }
+
+        let length = SecretStore.secretLength
+        guard length > 0, armedBuffer.count >= length else { return }
+
+        let attempt = armedBuffer
+        armedBuffer = ""
+        isVerifyingChallenge = true
+        matchQueue.async {
+            let isCorrect = SecretStore.matches(attempt)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                // Clear before the state check: bailing out with this still set would
+                // leave the challenge permanently deaf.
+                self.isVerifyingChallenge = false
+                guard self.state == .armed else { return }
+                if isCorrect {
+                    self.disarm(reason: "correct sequence - watchdog never surfaced")
+                } else {
+                    self.trip(reason: "wrong sequence")
+                }
+            }
         }
     }
 
@@ -227,7 +329,6 @@ final class LockController {
 
     private func trip(reason: String) {
         guard state == .armed else { return }
-        isTripping = true
         state = .locked
         buffer = ""
         assertion.acquire(reason: "SzpontLock locked")
@@ -315,7 +416,8 @@ final class LockController {
         // Unlocking inside the 5s window means the owner answered their own trap, so the
         // half-finished clip is of them, not an intruder. Drop it.
         recorder.cancel()
-        isTripping = false
+        armedBuffer = ""
+        isVerifyingChallenge = false
         buffer = ""
         overlay.hide()
         tap.stop()

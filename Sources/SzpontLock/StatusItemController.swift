@@ -131,7 +131,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     @objc private func toggleArm() {
         switch controller.state {
         case .idle: controller.arm()
-        case .armed: controller.disarm()
+        case .armed: controller.requestDisarm()   // fingerprint, not one free click
         case .locked: break
         }
     }
@@ -161,7 +161,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() {
-        NSApp.terminate(nil)
+        controller.requestQuit { granted in
+            guard granted else { return }
+            NSApp.terminate(nil)
+        }
     }
 
     func menuWillOpen(_ menu: NSMenu) {
