@@ -118,10 +118,21 @@ kept, even if the unlock follows a moment later, because the full window was cap
 ## The lock screen
 
 The interactive panel - typed-character dots, Touch ID button, timestamps - goes on the
-**primary** display. `Resources/lockdown.png` goes on the **topmost** display, meaning the
-one physically highest in the arrangement rather than `screens[0]`: Cocoa's y axis points
-up, so it is the screen with the greatest `frame.maxY`. Every other display is plain
-blackout. With a single display the picture and the panel share it.
+**primary** display. Every other display is plain blackout.
+
+The **topmost** display gets `Resources/lockdown.png`, meaning the one physically highest
+in the arrangement rather than `screens[0]`: Cocoa's y axis points up, so it is the screen
+with the greatest `frame.maxY`. It strobes **black → picture → white** at 60 ms a phase for
+two seconds, then holds black for the rest of the lockdown. With a single display the
+strobe and the panel share it, the panel drawn over the top.
+
+> The strobe flashes black to white at roughly 5.5 Hz, inside the range that can provoke
+> photosensitive seizures. It is deliberate, but worth knowing before pointing it at
+> someone.
+
+Its timer is registered in `.common` run loop modes. The default mode alone stops firing
+while a modal panel is up, which would freeze the strobe mid-flash the moment a Touch ID
+prompt appeared.
 
 ## Unlocking
 

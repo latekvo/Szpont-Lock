@@ -124,6 +124,69 @@ final class LockOverlay {
     }
 }
 
+/// Cycles black -> picture -> white for a couple of seconds, then holds black for good.
+///
+/// The timer is registered in `.common` run loop modes: the default mode alone stops
+/// firing while a modal panel (the Touch ID prompt) is up, which would freeze the strobe
+/// mid-flash on whatever frame it happened to be showing.
+struct StrobeView: View {
+    let image: NSImage?
+
+    /// ~5.5 full cycles per second.
+    private static let phaseDuration: TimeInterval = 0.06
+    private static let strobeDuration: TimeInterval = 2.0
+
+    @State private var phase = 0
+    @State private var hasFinished = false
+    @State private var timer: Timer?
+
+    var body: some View {
+        ZStack {
+            Color.black
+            if !hasFinished {
+                currentPhase
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear(perform: start)
+        .onDisappear {
+            timer?.invalidate()
+            timer = nil
+        }
+    }
+
+    @ViewBuilder
+    private var currentPhase: some View {
+        switch phase % 3 {
+        case 1:
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        case 2:
+            Color.white
+        default:
+            Color.black
+        }
+    }
+
+    private func start() {
+        let startedAt = Date()
+        let created = Timer(timeInterval: Self.phaseDuration, repeats: true) { firing in
+            guard Date().timeIntervalSince(startedAt) < Self.strobeDuration else {
+                firing.invalidate()
+                hasFinished = true
+                return
+            }
+            phase += 1
+        }
+        RunLoop.main.add(created, forMode: .common)
+        timer = created
+    }
+}
+
 struct LockScreenView: View {
     @ObservedObject var state: LockUIState
     let showsPanel: Bool
@@ -139,18 +202,13 @@ struct LockScreenView: View {
             )
             .ignoresSafeArea()
 
-            VStack(spacing: 32) {
-                if showsImage, let image = LockOverlay.intruderImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                if showsPanel {
-                    panel
-                }
+            if showsImage {
+                StrobeView(image: LockOverlay.intruderImage)
             }
-            .padding(showsImage ? 40 : 0)
+
+            if showsPanel {
+                panel
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
