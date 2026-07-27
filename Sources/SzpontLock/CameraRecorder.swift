@@ -14,6 +14,15 @@ import Foundation
 /// makes the length exact and independent of pipeline warm-up.
 ///
 /// Video only - adding audio would mean a Microphone TCC prompt that was never asked for.
+enum RecordingOutcome {
+    case saved(URL)
+    case failed
+    /// Aborted because the machine was unlocked before the clip finished. The partial
+    /// file is deleted rather than left behind: whoever unlocked it was the owner, so
+    /// the footage is of them answering their own trap.
+    case discarded
+}
+
 final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     private var session: AVCaptureSession?
     private var writer: AVAssetWriter?
@@ -21,7 +30,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var firstPresentationTime: CMTime?
     private var destination: URL?
     private var targetDuration: TimeInterval = 0
-    private var completion: ((URL?) -> Void)?
+    private var completion: ((RecordingOutcome) -> Void)?
     private var isStopping = false
     private var finished = false
     private let queue = DispatchQueue(label: "com.szpont.lock.camera")
@@ -37,7 +46,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
 
     /// Records `duration` seconds into `directory`. `completion` runs on the main queue.
-    func record(duration: TimeInterval, into directory: URL, completion: @escaping (URL?) -> Void) {
+    func record(duration: TimeInterval, into directory: URL, completion: @escaping (RecordingOutcome) -> Void) {
         self.completion = completion
         targetDuration = duration
         isStopping = false
@@ -47,7 +56,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             guard let self else { return }
             guard let device = AVCaptureDevice.default(for: .video),
                   let input = try? AVCaptureDeviceInput(device: device) else {
-                self.finish(nil)
+                self.finish(.failed)
                 return
             }
 
@@ -65,7 +74,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
             guard session.canAddInput(input), session.canAddOutput(videoOutput) else {
                 session.commitConfiguration()
-                self.finish(nil)
+                self.finish(.failed)
                 return
             }
             session.addInput(input)
@@ -82,7 +91,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             session.startRunning()
 
             // If the pipeline never delivers, do not hold the camera open forever.
-            self.queue.asyncAfter(deadline: .now() + duration + 12.0) { self.finish(nil) }
+            self.queue.asyncAfter(deadline: .now() + duration + 12.0) { self.finish(.failed) }
         }
     }
 
@@ -94,7 +103,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         if writer == nil {
             guard prepareWriter(for: sampleBuffer) else {
-                finish(nil)
+                finish(.failed)
                 return
             }
             writer?.startWriting()
@@ -104,7 +113,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         guard let writer, let input = writerInput, let start = firstPresentationTime,
               writer.status == .writing else {
-            finish(nil)
+            finish(.failed)
             return
         }
 
@@ -119,8 +128,26 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         writer.finishWriting { [weak self] in
             guard let self else { return }
             self.queue.async {
-                self.finish(writer.status == .completed ? url : nil)
+                guard writer.status == .completed, let url else {
+                    self.finish(.failed)
+                    return
+                }
+                self.finish(.saved(url))
             }
+        }
+    }
+
+    /// Aborts an in-flight recording and deletes the partial file.
+    ///
+    /// No-op once the clip has already been finalised: a complete recording is kept even
+    /// if the unlock follows a moment later, because the full window was captured.
+    func cancel() {
+        queue.async { [weak self] in
+            guard let self, !self.finished else { return }
+            let partial = self.destination
+            self.writer?.cancelWriting()
+            if let partial { try? FileManager.default.removeItem(at: partial) }
+            self.finish(.discarded)
         }
     }
 
@@ -144,7 +171,7 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         return true
     }
 
-    private func finish(_ url: URL?) {
+    private func finish(_ outcome: RecordingOutcome) {
         guard !finished else { return }
         finished = true
         session?.stopRunning()
@@ -155,6 +182,6 @@ final class CameraRecorder: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         destination = nil
         let completion = self.completion
         self.completion = nil
-        DispatchQueue.main.async { completion?(url) }
+        DispatchQueue.main.async { completion?(outcome) }
     }
 }

@@ -93,8 +93,10 @@ Video only - audio would mean a Microphone permission prompt that was never aske
 add it, add an audio `AVCaptureDeviceInput` in `CameraRecorder.record` plus an
 `NSMicrophoneUsageDescription` key in `scripts/build.sh`.
 
-The clip always runs its full length, even if you unlock after two seconds; stopping early
-buys nothing and risks a truncated file.
+**Unlocking mid-clip discards it.** If the machine is unlocked before the five seconds are
+up, whoever unlocked it was the owner, so the recording is of you answering your own trap -
+the partial file is deleted rather than left on the Desktop. A clip that already finished is
+kept, even if the unlock follows a moment later, because the full window was captured.
 
 ## Unlocking
 

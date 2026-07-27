@@ -243,14 +243,17 @@ final class LockController {
 
         let seconds = Int(Preferences.recordingSeconds)
         overlay.state.captureNote = "Recording \(seconds)s…"
-        recorder.record(duration: Preferences.recordingSeconds, into: SecretStore.captureDirectory()) { [weak self] url in
+        recorder.record(duration: Preferences.recordingSeconds, into: SecretStore.captureDirectory()) { [weak self] outcome in
             guard let self else { return }
-            if let url {
+            switch outcome {
+            case .saved(let url):
                 self.overlay.state.captureNote = "Recording saved to \(url.deletingLastPathComponent().lastPathComponent)"
                 SecretStore.log("RECORDED \(url.path)")
-            } else {
+            case .failed:
                 self.overlay.state.captureNote = "Recording failed"
                 SecretStore.log("RECORDING FAILED")
+            case .discarded:
+                SecretStore.log("RECORDING DISCARDED (unlocked before the clip finished)")
             }
         }
 
@@ -309,6 +312,9 @@ final class LockController {
         // The sequence may have been typed while a Touch ID panel was still up.
         biometrics.cancel()
         endBiometricPrompt()
+        // Unlocking inside the 5s window means the owner answered their own trap, so the
+        // half-finished clip is of them, not an intruder. Drop it.
+        recorder.cancel()
         isTripping = false
         buffer = ""
         overlay.hide()
