@@ -1,0 +1,10 @@
+# Linux SzpontLock applet dependencies.
+#
+# PySide6 is the official Qt for Python (LGPL) — the tray icon, shield windows,
+# dialogs and timers. Tested with 6.11.
+PySide6>=6.5
+
+# python-xlib drives the X11 keyboard grab (the watchdog's input capture) and reads
+# system-wide idle time via the MIT-SCREEN-SAVER extension (auto-arm). Pure Python,
+# no special privileges. X11 only — Wayland cannot grab the keyboard this way.
+python-xlib>=0.33
