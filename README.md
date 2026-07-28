@@ -49,6 +49,23 @@ check happens on a whole attempt rather than character by character.
 open dist/SzpontLock.app
 ```
 
+## Linux
+
+The same watchdog runs on Linux as a Qt6 system-tray applet under [`linux/`](linux),
+sharing this repo's `Resources/lockdown.png` and the exact `config.json`/`events.log`
+formats. The macOS Swift target above is untouched by it. It needs an **X11** session
+(the keyboard grab is an X mechanism; Wayland cannot arm):
+
+```sh
+cd linux
+pip install -r requirements.txt
+./szpontlock
+```
+
+See [`linux/README.md`](linux/README.md) for the platform-mechanism mapping
+(`XGrabKeyboard` for the CGEventTap, MIT-SCREEN-SAVER for idle, ffmpeg for the clip,
+fprintd-or-sequence for Touch ID), the escape hatch, and the tests.
+
 ## Permissions
 
 Two grants are needed, both prompted for on first launch:
