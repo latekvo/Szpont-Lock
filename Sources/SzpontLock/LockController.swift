@@ -240,9 +240,11 @@ final class LockController {
             return event
 
         case .armed:
-            // Mouse and everything else carry on as normal; the keyboard becomes a silent
-            // password prompt. Keystrokes are swallowed either way, so nothing an intruder
-            // types ever reaches whatever app happens to be focused.
+            // The keyboard becomes a silent password prompt and the mouse loses its buttons.
+            // Both are swallowed, so nothing an intruder does reaches whatever app happens to
+            // be focused - but only the keyboard is an answer to the challenge. A click is
+            // ignored outright: whoever knocked the trackpad has not typed a wrong sequence,
+            // and a wrong sequence is the only thing that raises the alarm.
             switch type {
             case .keyDown:
                 let code = event.keyCode
@@ -256,7 +258,7 @@ final class LockController {
                 // Its keyDown was swallowed, so releasing must not leak through either.
                 return nil
             default:
-                return event
+                return carriesMouseButton(type) ? nil : event
             }
 
         case .locked:
@@ -270,6 +272,21 @@ final class LockController {
                 }
             }
             return passesThroughDuringLockdown(type) ? event : nil
+        }
+    }
+
+    /// Every mouse event that carries a button, drags included - a drag is a click still in
+    /// progress, and letting one through after its button-down was swallowed would hand an
+    /// app half a gesture. Pointer movement is deliberately absent: the cursor still glides
+    /// while armed, which is what keeps the machine looking untouched.
+    private func carriesMouseButton(_ type: CGEventType) -> Bool {
+        switch type {
+        case .leftMouseDown, .leftMouseUp, .leftMouseDragged,
+             .rightMouseDown, .rightMouseUp, .rightMouseDragged,
+             .otherMouseDown, .otherMouseUp, .otherMouseDragged:
+            return true
+        default:
+            return false
         }
     }
 

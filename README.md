@@ -2,14 +2,15 @@
 
 A watchdog screen lock for macOS that lives in the menu bar.
 
-Arm it and the machine looks completely normal - the screen stays on and the mouse keeps
-working. What changes is that the keyboard quietly becomes a password prompt. Type your
-unlock sequence and the watchdog stands down without ever showing itself. Type anything
-else and the machine locks, records five seconds of whoever is at the keyboard, and
-refuses all input until Touch ID or the sequence releases it.
+Arm it and the machine still looks awake - the screen stays on and the cursor still moves.
+What changes is that the keyboard quietly becomes a password prompt and the mouse buttons
+stop doing anything at all. Type your unlock sequence and the watchdog stands down without
+ever showing itself. Type anything else and the machine locks, records five seconds of
+whoever is at the keyboard, and refuses all input until Touch ID or the sequence releases
+it.
 
-Either way none of that typing reaches whatever app happened to be focused - the armed
-watchdog swallows every keystroke.
+Either way none of that input reaches whatever app happened to be focused - the armed
+watchdog swallows every keystroke and every click.
 
 It also arms itself after a configurable stretch of inactivity, flashing the screen white
 to say so, so walking away is enough to set the trap.
@@ -19,7 +20,7 @@ to say so, so walking away is enough to set the trap.
 | Menu bar icon | State | Behaviour |
 | --- | --- | --- |
 | open padlock | idle | nothing is running |
-| orange eye | armed | mouse passes through; keyboard is a silent challenge |
+| orange eye | armed | cursor still moves; clicks are dropped; keyboard is a silent challenge |
 | red padlock | locked | all input swallowed, shield on every display; an intrusion also strobes and records |
 
 Lockdown comes from two places, and they are not treated the same. A **wrong sequence** at
@@ -40,6 +41,13 @@ Backspace corrects a typo and Escape or Return starts over. A part-typed attempt
 forgotten after five seconds of no typing, so somebody brushing the keyboard cannot leave
 a stray character that ruins the next real attempt. Only the salted hash is stored, so the
 check happens on a whole attempt rather than character by character.
+
+**The mouse buttons are dead while armed**, drags included, so an intruder cannot click
+their way around the machine either. The pointer still follows the trackpad - a frozen
+cursor would announce the trap - but nothing it lands on can be pressed. Clicks are simply
+dropped, never treated as a failed attempt: a knocked trackpad is not somebody guessing,
+and only a wrong sequence raises the alarm. This also puts SzpontLock's own menu out of
+reach while armed, so the way back is to type the sequence.
 
 ## Building
 
@@ -164,8 +172,11 @@ prompt appeared.
 
 Standing the watchdog down hands the machine back, so it needs proof:
 
-- **Touch ID** via *Disarm Watchdog* in the menu, or
-- **type the sequence** - the armed watchdog is already listening for it.
+- **type the sequence** - the armed watchdog is already listening for it. In practice this
+  is the way back: the armed tap swallows the very click that would open the menu.
+- **Touch ID** via *Disarm Watchdog* in the menu, if the menu can be opened at all. The
+  fingerprint is there so that reaching the menu is not by itself enough to stand the
+  watchdog down.
 
 *Quit* is the same hole one menu item down, so it asks for the same fingerprint while armed
 and disarms before terminating. `applicationShouldTerminate` refuses unless the app is idle,
@@ -210,17 +221,18 @@ user-space mechanism, and it does not stop:
 - anything that runs before the app does
 
 For real protection when you walk away, use the actual macOS screen lock. This is for the
-case you asked for - screen visibly on, mouse alive, keyboard rigged.
+case you asked for - screen visibly on, cursor still gliding, keyboard rigged.
 
 ## Implementation notes
 
 - **One tap, two phases.** A single `.cgSessionEventTap` with a full event mask serves both
   phases; the handler branches on state. It is registered in `commonModes` *and*
   `NSModalPanelRunLoopMode`, or it would stop suppressing input while a modal panel is up.
-- **The trip is deferred, the commitment is not.** `trip()` shows windows and starts the
-  camera, far too slow to run inside the tap callback, so it is dispatched to the next
-  run-loop turn - but an `isTripping` flag is set synchronously, so keystrokes in that gap
-  are already swallowed.
+- **Suppression is synchronous, the reaction is not.** The callback decides swallow-or-pass
+  on the spot and returns; what it swallows it copies out first - keycode, characters,
+  modifiers - because the event is invalid once the callback returns. Everything slow, from
+  hashing an attempt to raising the shield and starting the camera, happens on a later
+  turn, by which time the input it was reacting to has long since been dropped.
 - **The shield ducks for Touch ID.** The shield sits at `CGShieldingWindowLevel`
   (2147483628), above the menu bar, Dock and notification banners. The Touch ID panel is
   drawn by `coreautha` at level 1000 in a *different process*, so it cannot be raised from

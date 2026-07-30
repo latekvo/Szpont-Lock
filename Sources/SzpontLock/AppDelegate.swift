@@ -22,11 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Welcome to SzpontLock"
         alert.informativeText = """
-            SzpontLock lives in the menu bar. Arm it and the screen stays on and the mouse \
-            keeps working, but the keyboard quietly becomes a password prompt: type your \
-            sequence and the watchdog stands down without ever showing itself. Type \
-            anything else and the machine locks, records five seconds of whoever is at the \
-            keyboard, and swallows all input until Touch ID or the sequence releases it.
+            SzpontLock lives in the menu bar. Arm it and the screen stays on and the cursor \
+            still moves, but clicks stop working and the keyboard quietly becomes a \
+            password prompt: type your sequence and the watchdog stands down without ever \
+            showing itself. Type anything else and the machine locks, records five seconds \
+            of whoever is at the keyboard, and swallows all input until Touch ID or the \
+            sequence releases it.
 
             Set an unlock sequence to get started.
             """
