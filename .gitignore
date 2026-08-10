@@ -2,3 +2,8 @@
 dist/
 .signing/
 .DS_Store
+
+# Linux applet (Python) artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
