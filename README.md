@@ -167,6 +167,7 @@ prompt appeared.
 - **Touch ID** - offered automatically on lockdown, and via the button for retries.
 - **Unlock sequence** - just type it; it is matched as you type, no Return needed. Escape
   or Return clears what you have typed so far. ⌘ and ⌃ combinations are ignored.
+- **The macOS lock screen** - see below.
 
 ## Disarming
 
@@ -177,6 +178,7 @@ Standing the watchdog down hands the machine back, so it needs proof:
 - **Touch ID** via *Disarm Watchdog* in the menu, if the menu can be opened at all. The
   fingerprint is there so that reaching the menu is not by itself enough to stand the
   watchdog down.
+- **unlock the macOS screen lock** - see below.
 
 *Quit* is the same hole one menu item down, so it asks for the same fingerprint while armed
 and disarms before terminating. `applicationShouldTerminate` refuses unless the app is idle,
@@ -184,6 +186,20 @@ which also blocks a quit arriving from anywhere else.
 
 Only a salted, stretched SHA-256 of the sequence is written to disk (100k rounds, about
 50 ms per attempt), in `~/Library/Application Support/SzpontLock/config.json`.
+
+## The macOS screen lock
+
+Getting past the real macOS lock screen already proves who is at the keyboard, so when the
+system screen lock is lifted SzpontLock stands down too - an armed watchdog disarms, a
+lockdown releases. Walk away, let the watchdog auto-arm and macOS lock behind it, and one
+unlock on return is enough.
+
+Only a lock that really happened counts. `com.apple.screenIsLocked` / `screenIsUnlocked` are
+distributed notifications any process can post, so each is checked against
+`CGSSessionScreenIsLocked` in the WindowServer session dictionary, and the unlock is only
+honoured after a lock that dictionary confirmed. The notification can beat the dictionary
+by a few milliseconds, so it gets two seconds to agree. A screensaver or display sleep that
+did not lock the session does not count either.
 
 ## Where things land
 

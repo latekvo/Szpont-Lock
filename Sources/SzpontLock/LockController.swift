@@ -67,6 +67,7 @@ final class LockController {
     private var biometricTimer: Timer?
     private var autoArmTimer: Timer?
     private let flashOverlay = FlashOverlay()
+    private var systemScreenLock: SystemScreenLock?
 
     /// `kCGAnyInputEventType` (0xFFFFFFFF) happens to collide with
     /// `.tapDisabledByUserInput`, which is why this initialiser is non-nil.
@@ -89,6 +90,8 @@ final class LockController {
             return self.handle(type: type, event: event)
         }
         overlay.state.onTouchID = { [weak self] in self?.requestTouchID() }
+        // Getting past the macOS lock screen already proved who is at the keyboard.
+        systemScreenLock = SystemScreenLock { [weak self] in self?.standDownAfterSystemUnlock() }
         restartAutoArmTimer()
     }
 
@@ -217,6 +220,14 @@ final class LockController {
             arm()
             guard state == .armed else { return }
             trip(.ownerRequest)
+        }
+    }
+
+    private func standDownAfterSystemUnlock() {
+        switch state {
+        case .idle: break
+        case .armed: disarm(reason: "macOS screen unlocked")
+        case .locked: unlock(via: "macOS screen unlock")
         }
     }
 
